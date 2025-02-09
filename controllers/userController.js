@@ -11,7 +11,7 @@ const registerUser = asyncHandler(async (req, res) => {
   const userExists = await User.findOne({ email });
 
   if (userExists) {
-    res.status(404);
+    res.status(400); // Changed from 404 to 400 as it's more appropriate
     throw new Error("User already exists");
   }
 
@@ -23,12 +23,16 @@ const registerUser = asyncHandler(async (req, res) => {
   });
 
   if (user) {
-    generateToken(res, user._id);
+    const token = generateToken(res, user._id);
     res.status(201).json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
+      success: true,
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
     });
   } else {
     res.status(400);
@@ -36,29 +40,28 @@ const registerUser = asyncHandler(async (req, res) => {
   }
 });
 
-// @desc Login user
-// route POST /api/users/auth
-// @access public
+// Login controller
 const loginUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
   const user = await User.findOne({ email });
 
   if (user && (await user.matchPassword(password))) {
-    generateToken(res, user._id);
+    const token = generateToken(res, user._id);
     res.status(200).json({
       success: true,
-      message: `Login Successfull, ${user.name}!`,
+      message: `Login Successful, ${user.name}!`,
+      token,
       user: {
         _id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role
-      }
+        role: user.role,
+      },
     });
   } else {
-    res.status(400);
-    throw new Error("Invalid credentials");
+    res.status(401); // Changed from 400 to 401 for unauthorized
+    throw new Error("Invalid email or password");
   }
 });
 
@@ -91,24 +94,55 @@ const getUserProfile = asyncHandler(async (req, res) => {
 // @access private
 const updateUserProfile = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id);
-  if (user) {
+
+  if (!user) {
+    res.status(404);
+    throw new Error("User not found");
+  }
+
+  try {
+    // Validate current password if trying to change password
+    if (req.body.newPassword) {
+      if (!req.body.currentPassword) {
+        res.status(400);
+        throw new Error("Current password is required to set new password");
+      }
+
+      const isPasswordValid = await user.matchPassword(
+        req.body.currentPassword
+      );
+      if (!isPasswordValid) {
+        res.status(400);
+        throw new Error("Current password is incorrect");
+      }
+
+      // Set new password
+      user.password = req.body.newPassword;
+    }
+
+    // Update other fields
     user.name = req.body.name || user.name;
     user.email = req.body.email || user.email;
 
-    if (req.body.password) {
-      user.password = req.body.password;
-    }
-
     const updatedUser = await user.save();
+
+    // Generate new token after password change
+    const token = req.body.newPassword ? generateToken(res, user._id) : null;
+
     res.status(200).json({
-      _id: updatedUser._id,
-      name: updatedUser.name,
-      email: updatedUser.email,
-      role: updatedUser.role,
+      success: true,
+      message: "Profile updated successfully",
+      user: {
+        _id: updatedUser._id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role,
+      },
+      ...(token && { token }), // Include new token only if password was changed
     });
-  } else {
-    res.status(404);
-    throw new Error("User not found");
+  } catch (error) {
+    res.status(400);
+    throw new Error(error.message);
   }
 });
 
@@ -139,43 +173,39 @@ const deleteUser = asyncHandler(async (req, res) => {
 const checkUserRole = asyncHandler(async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
-    
+
     if (!user) {
       res.status(404);
-      throw new Error('User not found');
+      throw new Error("User not found");
     }
 
     const roleDetails = {
       role: user.role,
       permissions: {
-        isAdmin: user.role === 'admin',
-        canCreateMovies: user.role === 'admin',
-        canDeleteMovies: user.role === 'admin',
-        canEditMovies: user.role === 'admin',
-        canViewUsers: user.role === 'admin',
+        isAdmin: user.role === "admin",
+        canCreateMovies: user.role === "admin",
+        canDeleteMovies: user.role === "admin",
+        canEditMovies: user.role === "admin",
+        canViewUsers: user.role === "admin",
         canCreateReviews: true, // All authenticated users can create reviews
       },
       user: {
         _id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: user.role,
       },
-      status: 'active',
+      status: "active",
       lastChecked: new Date(),
-      message: `User authenticated as ${user.role}`
+      message: `User authenticated as ${user.role}`,
     };
 
     res.json(roleDetails);
-
   } catch (error) {
     res.status(500);
-    throw new Error('Error checking user role: ' + error.message);
+    throw new Error("Error checking user role: " + error.message);
   }
 });
-
-
-
 
 export {
   registerUser,
