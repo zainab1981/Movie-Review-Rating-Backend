@@ -18,6 +18,16 @@ const createReview = asyncHandler(async (req, res) => {
       throw new Error("Movie not found");
     }
 
+    // Check if user has already reviewed this movie
+    const alreadyReviewed = movie.reviews.find(
+      (r) => r.user.toString() === req.user._id.toString()
+    );
+
+    if (alreadyReviewed) {
+      res.status(400);
+      throw new Error("You have already reviewed this movie");
+    }
+
     // Create new review
     const review = {
       user: req.user._id,

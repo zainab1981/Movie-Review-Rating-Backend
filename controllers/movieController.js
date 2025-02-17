@@ -183,6 +183,7 @@ const addMovieReview = asyncHandler(async (req, res) => {
   const movie = await Movie.findById(req.params.id);
 
   if (movie) {
+    // Check if user has already reviewed this movie
     const alreadyReviewed = movie.reviews.find(
       (r) => r.user.toString() === req.user._id.toString()
     );
